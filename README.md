@@ -5,3 +5,4 @@
 #### FitModel_alpha.m: MATLAB function to fit a participant's psychometric curve for static pictures
 #### FitModel_alphadynamic.m: MATLAB function to fit a participant's psychometric curve for dynamic videos
 #### MoS-AllTasksFMRIData-Figs-share.ipynb: Jupyter notebook that creates all the figures in the manuscript
+#### SXX_afni_procME.OC.script: This tcsh script takes a participant code as input and run the preprocessing and analysis of Localizer data and Identity-Expression Task. 
