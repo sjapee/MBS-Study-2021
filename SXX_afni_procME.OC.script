@@ -1,0 +1,177 @@
+#!/bin/tcsh
+
+# BE SURE TO FIND/REPLACE TO THE CORRECT SUBJECT NUMBER
+# BE SURE TO IDENTIFY CORRECT RUN #s FOR MEICA AND BEYOND
+
+echo %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+echo Started on
+date
+echo %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#when you run this script add >! SubjID_preprocessingME.log 
+
+set inPath = /misc/data12/sjapee/MoebiusSyndrome/fmri
+set inDir = /misc/data12/sjapee/MoebiusSyndrome/fmri
+set S = $argv[1]
+
+set inFile = $inDir/SS.scan.info.txt
+
+set warp = 2
+set warpCode = .NLQ
+set warpType = -tlrc_NL_warp
+set outCode = OC
+set tlrc_base = TT_152_2009c+tlrc
+
+cd ${inDir}/${S}
+		
+set blipScan = `grep $S $inDir/SS.blip.info.txt | cut -f3`
+set forwardScan = `grep $S $inDir/SS.scan.info.txt | cut -f5- | cut -d" " -f1`
+
+FFALocalizer:
+echo %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+echo %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+echo %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+echo %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+echo for FFA Localizer runs
+echo %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+set analysis = FFALocalizer
+
+
+set subj_id = $S.ME.${analysis}${warpCode}.${outCode}
+
+#typically only two localizer runs but figure out how many
+set inRunFile = $inDir/SS.run.info.txt
+set runList = `grep $S $inRunFile | grep $analysis | cut -f3-`
+set inScanFile = $inDir/SS.scan.info.txt
+set tmpList = `echo $runList | sed 's/,/ /g'`
+set nCurrRuns = $#tmpList
+set snum = `expr ${tmpList[1]}` #skip 4 for the first four columns in the scan list file.
+set enum = `expr $snum + $nCurrRuns - 1`
+if $nCurrRuns == 1 then
+set scanList = `grep $S $inScanFile | cut -f5 | cut -d" " -f${snum}`
+else
+set scanList = `grep $S $inScanFile | cut -f5 | cut -d" " -f${snum}-${enum}`
+endif
+echo $scanList $nCurrRuns
+
+#now look in the episeries variable and grab out the correct mr_xxxx runs
+set currScanList = ""
+foreach iRun (`count -digits 1 1 $nCurrRuns`)
+echo $iRun
+set currScan = $scanList[$iRun]
+echo $currScan
+set currList = (raw/mr_${currScan}/echo_*_dataset+orig.HEAD)
+set currScanList = "$currScanList -dsets_me_run $currList"
+end
+echo $currScanList
+
+set stimDir = ${inDir}/${S}/stimuli/${analysis}
+	
+afni_proc.py -subj_id $subj_id \
+	-copy_anat ${inDir}/${S}/processed/${S}.anat+orig \
+	-anat_has_skull yes \
+	$currScanList  \
+	-reg_echo 2                                   \
+ 	-echo_times 12.5 27.6 42.7 \
+	-blocks tshift align tlrc volreg mask combine blur scale regress \
+	-tcat_remove_first_trs 4                           \
+        -blip_reverse_dset raw/mr_${blipScan}/echo_1_dataset+orig.BRIK \
+	-blip_forward_dset raw/mr_${forwardScan}/echo_002_dataset+orig.BRIK'[0..9]' \
+	-align_opts_aea -cost lpc+ZZ                       \
+	$warpType					\
+	-tlrc_base $tlrc_base			\
+        -volreg_align_to MIN_OUTLIER                       \
+        -volreg_align_e2a                                  \
+        -volreg_tlrc_warp                                  \
+	-mask_epi_anat yes \
+	-combine_method OC \
+	-regress_stim_times ${stimDir}/{DF,DO,SF,SO,SC}.1D \
+        -regress_stim_labels DFace DObject SFace SObject Scrambled      \
+        -regress_basis 'BLOCK(27.5,1)'                       \
+        -regress_motion_per_run                            \
+        -regress_censor_motion 0.3                         \
+	-regress_opts_3dD                                  \
+	-num_glt 8	\
+	-gltsym 'SYM: DFace -DObject' -glt_label 1 DFace.vs.DObject                       \
+	-gltsym 'SYM: SFace -SObject' -glt_label 2 SFace.vs.SObject                       \
+	-gltsym 'SYM: DFace -SFace' -glt_label 3 DFace.vs.SFace                      \
+	-gltsym 'SYM: DObject -SObject' -glt_label 4 DObject.vs.SObject                       \
+	-gltsym 'SYM: 0.5*DFace +0.5*DObject -0.5*SFace -0.5*SObject' -glt_label 5 Dynamic.vs.Static \
+	-gltsym 'SYM: 0.5*DFace +0.5*SFace -0.5*DObject -0.5*SObject' -glt_label 6 Face.vs.Object \
+	-gltsym 'SYM: SFace -Scrambled' -glt_label 7 SFace.vs.Scrambled                        \
+	-gltsym 'SYM: SObject -Scrambled' -glt_label 8 SObject.vs.Scrambled                        \
+	-regress_est_blur_errts \
+	-regress_run_clustsim yes \
+	-execute
+
+#copy over the min outlier brick to the main subject directory to use for the next few afni procs
+3dcopy -overwrite ${subj_id}.results/vr_base_min_outlier+orig ./${subj_id}.vr_base_min_outlier+orig
+
+	
+#####################
+echo %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+echo for ID Expression runs
+echo %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+set analysis = IDExprMatching
+set subj_id = $S.ME.${analysis}${warpCode}.${outCode}
+
+#cleanup before you start
+rm -rf ${subj_id}.results proc.${subj_id}
+
+#typically only 4 IDExpr runs but figure out how many
+set inRunFile = $inDir/SS.run.info.txt
+set runList = `grep $S $inRunFile | grep $analysis | cut -f3-`
+set inScanFile = $inDir/SS.scan.info.txt
+set tmpList = `echo $runList | sed 's/,/ /g'`
+set nCurrRuns = $#tmpList
+set snum = `expr ${tmpList[1]}` 
+set enum = `expr $snum + $nCurrRuns - 1`
+if $nCurrRuns == 1 then
+set scanList = `grep $S $inScanFile | cut -f5 | cut -d" " -f${snum}` #skip 4 for the first four columns in the scan list file.
+else
+set scanList = `grep $S $inScanFile | cut -f5 | cut -d" " -f${snum}-${enum}`
+endif
+
+#now look in the episeries variable and grab out the correct mr_xxxx runs
+set currScanList = ""
+foreach iRun (`count -digits 1 1 $nCurrRuns`)
+#echo $iRun
+set currScan = $scanList[$iRun]
+#echo $currScan
+set currList = (raw/mr_${currScan}/echo_*_dataset+orig.HEAD)
+set currScanList = "$currScanList -dsets_me_run $currList"
+end
+echo $currScanList
+
+set stimDir = ${inDir}/${S}/stimuli/${analysis}
+	
+afni_proc.py -subj_id $subj_id \
+	-copy_anat ${inDir}/${S}/processed/${S}.anat+orig \
+	-anat_has_skull yes \
+	$currScanList  \
+	-reg_echo 2                                   \
+ 	-echo_times 12.5 27.6 42.7 \
+	-blocks tshift align tlrc volreg mask combine blur scale regress \
+	-tcat_remove_first_trs 4                           \
+        -blip_reverse_dset raw/mr_${blipScan}/echo_1_dataset+orig.BRIK \
+	-blip_forward_dset raw/mr_${forwardScan}/echo_002_dataset+orig.BRIK'[0..9]' \
+	-align_opts_aea -cost lpc+ZZ                       \
+	$warpType					\
+	-tlrc_base $tlrc_base			\
+        -volreg_base_dset   ${inDir}/${S}/${S}.ME.FFALocalizer${warpCode}.${outCode}.vr_base_min_outlier+orig                 \
+        -volreg_align_e2a                                  \
+        -volreg_tlrc_warp                                  \
+	-mask_epi_anat yes \
+	-combine_method OC \
+	-regress_stim_times ${stimDir}/{ID,Expr}.1D \
+        -regress_stim_labels IDTask ExprTask  \
+        -regress_basis 'BLOCK(26.7,1)'                       \
+        -regress_motion_per_run                            \
+        -regress_censor_motion 0.3                         \
+	-regress_opts_3dD                                  \
+	-num_glt 1	\
+	-gltsym 'SYM: IDTask -ExprTask' -glt_label 1 ID.vs.Expr                       \
+	-regress_est_blur_errts \
+	-regress_run_clustsim yes \
+	-execute
+	
+	
